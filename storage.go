@@ -21,7 +21,11 @@ func (storage *Storage) Save(data Todos) error {
 	if err != nil {
 		return fmt.Errorf("failed to marshal Todos data: %w", err)
 	}
-	os.WriteFile(storage.FileName, jsonData, 0644)
+
+	if err := os.WriteFile(storage.FileName, jsonData, 0644); err != nil {
+		return fmt.Errorf("failed to write file: %w", err)
+	}
+
 	return nil
 }
 
@@ -34,5 +38,6 @@ func (storage *Storage) Load(todos *Todos) error {
 	if err := json.Unmarshal(jsonData, todos); err != nil {
 		return fmt.Errorf("failed to unmarshal Todos data: %w", err)
 	}
+	
 	return nil
 }
