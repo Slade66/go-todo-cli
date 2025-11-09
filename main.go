@@ -10,6 +10,12 @@ import (
 
 var todos Todos
 var storage *Storage
+var storagePath string
+
+func init() {
+	flag.StringVar(&storagePath, "storage-path", "todos.json", "数据文件的路径")
+	flag.Parse()
+}
 
 func main() {
 	// 1. 初始化日志器
@@ -19,8 +25,8 @@ func main() {
 		os.Exit(1)
 	}
 	defer zap.L().Sync() // 确保程序退出前，把日志刷新到文件。
-	zap.L().Info("Logger initialized")
-	
+	zap.L().Debug("Logger initialized")
+
 	// 2. 加载数据
 	loadTodos()
 
@@ -29,15 +35,16 @@ func main() {
 		showMenu()
 		choice, err := getUserChoice()
 		if err != nil {
-			fmt.Println(err)
+			zap.L().Warn("Invalid user input.", zap.Int("choice", *choice), zap.Error(err))
+			fmt.Println("输入有误，请重试。")
 			continue
 		}
-		shouldExit := Execute(choice)
+		shouldExit := Execute(*choice)
 		if shouldExit {
 			return
 		}
 	}
-	
+
 }
 
 // initLogger 用于初始化日志器。
@@ -66,8 +73,10 @@ func Execute(choice int) bool {
 		saveTodos()
 	case 6:
 		fmt.Println("Bye.")
+		zap.L().Debug("Exiting application.")
 		return true
 	default:
+		zap.L().Warn("Invalid menu choice.", zap.Int("choice", choice))
 		fmt.Println("无效的选择，请重新输入")
 	}
 	return false
@@ -76,45 +85,69 @@ func Execute(choice int) bool {
 func editTodo() {
 	var index int
 	fmt.Print("请输入待办事项索引: ")
-	fmt.Scan(&index)
+	if _, err := fmt.Scan(&index); err != nil {
+		zap.L().Warn("Invalid user input.", zap.Int("index", index), zap.Error(err))
+		return
+	}
 	var title string
 	fmt.Print("请输入待办事项标题: ")
-	fmt.Scan(&title)
+	if _, err := fmt.Scan(&title); err != nil {
+		zap.L().Warn("Invalid user input.", zap.String("title", title), zap.Error(err))
+		return
+	}
 	todos.edit(index, title)
+	zap.L().Debug("Todo edited.", zap.Int("index", index), zap.String("title", title))
 }
 
 func saveTodos() {
-	storage.Save(todos)
+	if err := storage.Save(todos); err != nil {
+		zap.L().Error("Failed to save todos", zap.String("file", storage.FileName), zap.Error(err))
+		fmt.Println("保存失败，请重试。")
+		return
+	}
+	zap.L().Debug("Todos saved", zap.String("file", storage.FileName), zap.Int("count", len(todos)))
 }
 
 func toggleTodo() {
 	var index int
 	fmt.Print("请输入待办事项索引: ")
-	fmt.Scan(&index)
+	if _, err := fmt.Scan(&index); err != nil {
+		zap.L().Warn("Invalid user input.", zap.Int("index", index), zap.Error(err))
+		return
+	}
 	todos.toggle(index)
+	zap.L().Debug("Todo toggled.", zap.Int("index", index))
 }
 
 func deleteTodo() {
 	var index int
 	fmt.Print("请输入待办事项索引: ")
-	fmt.Scan(&index)
+	if _, err := fmt.Scan(&index); err != nil {
+		zap.L().Warn("Invalid user input.", zap.Int("index", index), zap.Error(err))
+		return
+	}
 	todos.delete(index)
+	zap.L().Debug("Todo deleted.", zap.Int("index", index))
 }
 
 func addTodo() {
 	var title string
 	fmt.Print("请输入待办事项标题: ")
-	fmt.Scan(&title)
+	if _, err := fmt.Scan(&title); err != nil {
+		zap.L().Warn("Invalid user input.", zap.String("title", title), zap.Error(err))
+		return
+	}
 	todos.add(title)
+	zap.L().Debug("Todo added.", zap.String("title", title))
 }
 
-func getUserChoice() (int, error) {
+func getUserChoice() (*int, error) {
 	var choice int
 	_, err := fmt.Scan(&choice)
 	if err != nil {
-		return choice, fmt.Errorf("输入错误: %w", err)
+		return nil, fmt.Errorf("输入错误: %w", err)
 	}
-	return choice, nil
+	return &choice, nil
 }
 
 func showMenu() {
@@ -127,9 +160,13 @@ func showMenu() {
 	fmt.Print("请输入您的选择: ")
 }
 
+// loadTodos 用于从文件加载待办事项。
 func loadTodos() {
-	storagePath := flag.String("storage-path", "todos.json", "数据文件的路径")
-	flag.Parse()
-	storage = NewStorage(*storagePath)
-	storage.Load(&todos)
+	storage = NewStorage(storagePath)
+	if err := storage.Load(&todos); err != nil {
+		todos = Todos{}
+		zap.L().Warn("Failed to load todos, using empty todos.", zap.String("file", storage.FileName), zap.Error(err))
+		return
+	}
+	zap.L().Debug("Todos loaded.", zap.Int("count", len(todos)), zap.String("file", storage.FileName))
 }
